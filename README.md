@@ -4,7 +4,7 @@ A collection of skills for AI coding agents (Claude Code and compatible tools) t
 
 ## Skills
 
-### `codepipeline-github-status-setup`
+### [`codepipeline-github-status-setup`](./codepipeline-github-status-setup/SKILL.md)
 
 Sets up GitHub commit status checks for AWS CodePipeline → Elastic Beanstalk deployments.
 
