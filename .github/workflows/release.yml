@@ -1,0 +1,51 @@
+name: Package and Release Skills
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Package skills
+        run: |
+          mkdir -p dist
+
+          for skill_dir in */; do
+            skill="${skill_dir%/}"
+
+            # Only process directories that contain a SKILL.md
+            [ -f "${skill}/SKILL.md" ] || continue
+
+            echo "Packaging ${skill}..."
+            zip -r "dist/${skill}.skill" "${skill}/" \
+              --exclude "*/__pycache__/*" \
+              --exclude "*/node_modules/*" \
+              --exclude "*/.DS_Store" \
+              --exclude "*.pyc" \
+              --exclude "${skill}/evals/*"
+          done
+
+          echo ""
+          echo "Packaged assets:"
+          ls -lh dist/
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          gh release create "$TAG_NAME" dist/*.skill \
+            --title "$TAG_NAME" \
+            --generate-notes \
+            --repo "$REPO"
