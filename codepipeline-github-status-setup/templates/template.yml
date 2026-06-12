@@ -1,0 +1,120 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Sets GitHub commit statuses (pending/success/failure) based on
+  CodePipeline execution state changes.
+
+Parameters:
+  GitHubTokenSsmParam:
+    Type: String
+    Default: {{SSM_PARAM_PATH}}
+    Description: SSM Parameter Store path (SecureString) holding the GitHub PAT
+
+Resources:
+
+  # ── IAM role for the Lambda ──────────────────────────────────────────────
+
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: {{PREFIX}}-codepipeline-github-status-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: CodePipelineReadAndSsmRead
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: CodePipelineGetExecution
+                Effect: Allow
+                Action:
+                  - codepipeline:GetPipelineExecution
+                Resource: !Sub 'arn:aws:codepipeline:${AWS::Region}:${AWS::AccountId}:*'
+              - Sid: SsmGetGitHubToken
+                Effect: Allow
+                Action:
+                  - ssm:GetParameter
+                Resource: !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${GitHubTokenSsmParam}'
+              - Sid: KmsDecryptSsm
+                Effect: Allow
+                Action:
+                  - kms:Decrypt
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    kms:ViaService: !Sub 'ssm.${AWS::Region}.amazonaws.com'
+
+  # ── Lambda function ───────────────────────────────────────────────────────
+
+  GitHubStatusFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: {{PREFIX}}-codepipeline-github-status
+      Description: Updates GitHub commit statuses on CodePipeline state changes
+      Runtime: python3.12
+      Handler: lambda_function.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 30
+      MemorySize: 128
+      Environment:
+        Variables:
+          GITHUB_TOKEN_SSM_PARAM: !Ref GitHubTokenSsmParam
+      Code:
+        ZipFile: |
+          # Placeholder — replaced by deploy.sh
+          def lambda_handler(event, context): pass
+
+  GitHubStatusFunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${GitHubStatusFunction}'
+      RetentionInDays: 30
+
+  # ── EventBridge rule ──────────────────────────────────────────────────────
+
+  CodePipelineStateChangeRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: {{PREFIX}}-codepipeline-github-status-trigger
+      Description: Fires on CodePipeline state changes for project pipelines
+      EventPattern:
+        source:
+          - aws.codepipeline
+        detail-type:
+          - CodePipeline Pipeline Execution State Change
+        detail:
+          pipeline:
+            {{PIPELINE_NAMES_YAML_LIST}}
+          state:
+            - STARTED
+            - RESUMED
+            - SUCCEEDED
+            - FAILED
+            - CANCELED
+            - STOPPED
+      State: ENABLED
+      Targets:
+        - Id: GitHubStatusLambda
+          Arn: !GetAtt GitHubStatusFunction.Arn
+
+  LambdaInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt GitHubStatusFunction.Arn
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt CodePipelineStateChangeRule.Arn
+
+Outputs:
+  LambdaFunctionName:
+    Value: !Ref GitHubStatusFunction
+  LambdaFunctionArn:
+    Value: !GetAtt GitHubStatusFunction.Arn
+  EventBridgeRuleName:
+    Value: !Ref CodePipelineStateChangeRule
