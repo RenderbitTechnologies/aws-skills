@@ -1,6 +1,6 @@
-# aws-skills
+# AWS Skills
 
-Claude Code skills for deploying and managing infrastructure on Amazon Web Services.
+AI agent skills for deploying and managing infrastructure on Amazon Web Services.
 
 ## Skills
 
